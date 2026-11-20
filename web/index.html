@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Apple Panic</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background-color: #000;
+      color: #4f4;
+      font-family: monospace;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #loading {
+      text-align: center;
+      font-size: 18px;
+      letter-spacing: 0.05em;
+    }
+    #error {
+      display: none;
+      color: #f55;
+      text-align: center;
+      max-width: 600px;
+      padding: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div id="loading">Loading Apple Panic...</div>
+  <div id="error"></div>
+  <script src="wasm_exec.js?v=0c949f4996f9"></script>
+  <script>
+    (async () => {
+      const loading = document.getElementById("loading");
+      const errorEl = document.getElementById("error");
+      try {
+        const go = new Go();
+        const result = await WebAssembly.instantiateStreaming(
+          fetch("apple-panic.wasm?v=a614169b5edb", { cache: "no-cache" }),
+          go.importObject
+        );
+        loading.remove();
+        go.run(result.instance);
+      } catch (err) {
+        loading.style.display = "none";
+        errorEl.style.display = "block";
+        errorEl.textContent = "Failed to load Apple Panic: " + err;
+        console.error(err);
+      }
+    })();
+  </script>
+</body>
+</html>
