@@ -1,0 +1,51 @@
+//kage:unit pixels
+
+package main
+
+func luminance(c vec3) float {
+	return dot(c, vec3(0.299, 0.587, 0.114))
+}
+
+func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
+	origin := imageSrc0Origin()
+	size := imageSrc0Size()
+
+	c := imageSrc0At(srcPos).rgb
+	luma := clamp(luminance(c), 0.0, 1.0)
+
+	// Subtle phosphor bloom from immediate neighbors (stronger horizontally like a CRT beam).
+	hStep := vec2(1.5, 0.0)
+	vStep := vec2(0.0, 1.5)
+	glow := (luminance(imageSrc0At(srcPos-hStep).rgb)+
+		luminance(imageSrc0At(srcPos+hStep).rgb))*0.35 +
+		(luminance(imageSrc0At(srcPos-vStep).rgb)+
+			luminance(imageSrc0At(srcPos+vStep).rgb))*0.15
+
+	// Smooth midtone lift so Apple II artifact colors stay vivid on monochrome phosphor.
+	lifted := luma / (0.35*luma + 0.65)
+	v := clamp(lifted+glow*0.18, 0.0, 1.15)
+
+	// Subtle horizontal CRT scanlines (192 logical Apple II scanlines across the height).
+	normY := (srcPos.y - origin.y) / max(size.y, 1.0)
+	scan := 0.90 + 0.10*cos(normY*192.0*6.2831853)
+	v *= scan
+
+	// Gentle CRT glass edge vignette.
+	uv := (srcPos-origin)/max(size, vec2(1.0, 1.0))*2.0 - 1.0
+	vignette := clamp(1.0-dot(uv*uv, vec2(0.08, 0.10)), 0.80, 1.0)
+	v *= vignette
+
+	// P31 green phosphor ramp: dark CRT glass -> vivid P31 green -> bright mint highlight.
+	bg := vec3(0.012, 0.045, 0.016)
+	mid := vec3(0.10, 0.88, 0.24)
+	hi := vec3(0.68, 1.00, 0.72)
+
+	var out vec3
+	if v < 0.75 {
+		out = mix(bg, mid, clamp(v/0.75, 0.0, 1.0))
+	} else {
+		out = mix(mid, hi, clamp((v-0.75)/0.40, 0.0, 1.0))
+	}
+
+	return vec4(out, 1.0)
+}
