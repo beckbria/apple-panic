@@ -287,12 +287,14 @@ func (w *World) setupLevel(isDeathRetry bool) {
 	w.accumMonsterPass = 0
 	w.playerHalfStep = 0
 
-	// Rotate through the 4 ladder layouts based on lives and layout counter.
-	w.LayoutCounter++
-	ladderIdx := (w.Lives + w.LayoutCounter) & 3
-	srcLadders := levels.LadderLayouts[ladderIdx]
-	w.Ladders = make([]levels.Ladder, len(srcLadders))
-	copy(w.Ladders, srcLadders)
+	if !isDeathRetry {
+		// Rotate through the 4 ladder layouts based on lives and layout counter.
+		w.LayoutCounter++
+		ladderIdx := (w.Lives + w.LayoutCounter) & 3
+		srcLadders := levels.LadderLayouts[ladderIdx]
+		w.Ladders = make([]levels.Ladder, len(srcLadders))
+		copy(w.Ladders, srcLadders)
+	}
 
 	// Rotate through the 4 monster spawn sets based on level and layout counter.
 	w.LayoutCounter++

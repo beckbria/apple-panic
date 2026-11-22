@@ -1,6 +1,7 @@
 package sim
 
 import (
+	"slices"
 	"testing"
 
 	"apple-panic/internal/config"
@@ -617,6 +618,44 @@ func TestPauseWhileMonsterFallsEnabledAndDisabled(t *testing.T) {
 		w.StepPlayer(InputSnapshot{Right: true})
 		if w.Player.X <= 20 {
 			t.Fatalf("expected player to move while monster falls when PauseWhileMonsterFalls=false, got X=%d", w.Player.X)
+		}
+	}
+}
+
+func TestPlayerDeathPreservesLadderLayout(t *testing.T) {
+	acc := config.DefaultConfig().Accessibility
+	w := NewWorld(1, 0, acc)
+	w.Phase = PhasePlaying
+
+	initialLadders := slices.Clone(w.Ladders)
+	if len(initialLadders) == 0 {
+		t.Fatalf("expected non-empty initial ladder layout")
+	}
+
+	// Dig a hole and move a monster before dying.
+	w.Holes = append(w.Holes, Hole{FloorIdx: 4, X: 40, Stage: 5})
+	w.Monsters[0].X = 12
+	w.Monsters[0].Y = 0x86
+
+	// Die twice (while lives remain) and verify ladder layout is unchanged,
+	// holes are filled in, and monsters are reset.
+	for death := 1; death <= 2; death++ {
+		w.Phase = PhasePlaying
+		w.KillPlayer()
+		for i := 0; i < 30 && w.Phase == PhaseDying; i++ {
+			w.Update(0.05, InputSnapshot{})
+		}
+		if w.Phase != PhaseReady {
+			t.Fatalf("death %d: expected PhaseReady after death retry, got %v", death, w.Phase)
+		}
+		if !slices.Equal(w.Ladders, initialLadders) {
+			t.Fatalf("death %d: expected ladder layout to remain unchanged after player death", death)
+		}
+		if len(w.Holes) != 0 {
+			t.Fatalf("death %d: expected holes to be filled in after player death, got %d", death, len(w.Holes))
+		}
+		if !w.Monsters[0].Active || w.Monsters[0].State != MonsterPatrol {
+			t.Fatalf("death %d: expected monsters to reset to active patrol", death)
 		}
 	}
 }
