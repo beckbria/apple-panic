@@ -660,4 +660,96 @@ func TestPlayerDeathPreservesLadderLayout(t *testing.T) {
 	}
 }
 
+func TestInfiniteLivesPreventsLifeLossAndGameOver(t *testing.T) {
+	acc := config.DefaultConfig().Accessibility
+	w := NewWorld(1, 0, acc)
+	w.InfiniteLives = true
+	w.Lives = 1
+
+	// Die 5 times in a row; with InfiniteLives enabled, Lives should never drop and GameOver must not trigger.
+	for death := 1; death <= 5; death++ {
+		w.Phase = PhasePlaying
+		w.KillPlayer()
+		for i := 0; i < 40 && w.Phase == PhaseDying; i++ {
+			w.Update(0.05, InputSnapshot{})
+		}
+		if w.Phase != PhaseReady {
+			t.Fatalf("death %d: expected PhaseReady with InfiniteLives, got %v", death, w.Phase)
+		}
+		if w.Lives != 1 {
+			t.Fatalf("death %d: expected Lives to remain 1, got %d", death, w.Lives)
+		}
+	}
+
+	// Disabling InfiniteLives restores normal game over on final life.
+	w.InfiniteLives = false
+	w.Phase = PhasePlaying
+	w.KillPlayer()
+	for i := 0; i < 40 && w.Phase == PhaseDying; i++ {
+		w.Update(0.05, InputSnapshot{})
+	}
+	if w.Phase != PhaseGameOver {
+		t.Fatalf("expected PhaseGameOver once InfiniteLives is disabled, got %v", w.Phase)
+	}
+	if w.Lives != 0 {
+		t.Fatalf("expected 0 lives at game over, got %d", w.Lives)
+	}
+}
+
+func TestJumpToLevel(t *testing.T) {
+	acc := config.DefaultConfig().Accessibility
+	w := NewWorld(7, 0, acc)
+	w.Score = 1500
+	w.InfiniteLives = true
+	w.Monsters[0].KilledInThisLevel = true
+
+	// Jump to Level 12 (Group 3, sub-level 2 => 8 monsters: 1 Mask, 2 Butterflies, 5 Apples)
+	w.JumpToLevel(12)
+	if w.Level != 12 {
+		t.Fatalf("expected Level 12, got %d", w.Level)
+	}
+	if w.Phase != PhaseReady {
+		t.Fatalf("expected PhaseReady after JumpToLevel, got %v", w.Phase)
+	}
+	if w.Score != 1500 {
+		t.Fatalf("expected Score to be preserved, got %d", w.Score)
+	}
+	if !w.InfiniteLives {
+		t.Fatalf("expected InfiniteLives to remain enabled")
+	}
+	expectedRoster := levels.MonstersForLevel(12)
+	activeCount := 0
+	for i := range w.Monsters {
+		if w.Monsters[i].KilledInThisLevel {
+			t.Fatalf("slot %d: expected kill memory cleared on JumpToLevel", i)
+		}
+		if w.Monsters[i].Active {
+			if w.Monsters[i].Type != expectedRoster[i] {
+				t.Fatalf("slot %d: expected monster type %v, got %v", i, expectedRoster[i], w.Monsters[i].Type)
+			}
+			activeCount++
+		}
+	}
+	if activeCount != len(expectedRoster) {
+		t.Fatalf("expected %d active monsters for Level 12, got %d", len(expectedRoster), activeCount)
+	}
+
+	// Clamping out-of-range levels and recovering from 0 lives (Game Over).
+	w.Lives = 0
+	w.Phase = PhaseGameOver
+	w.JumpToLevel(999)
+	if w.Level != levels.MaxLevel {
+		t.Fatalf("expected level clamped to %d, got %d", levels.MaxLevel, w.Level)
+	}
+	if w.Lives != InitialLives {
+		t.Fatalf("expected Lives restored to %d from GameOver, got %d", InitialLives, w.Lives)
+	}
+
+	w.JumpToLevel(0)
+	if w.Level != 1 {
+		t.Fatalf("expected level clamped to 1, got %d", w.Level)
+	}
+}
+
+
 

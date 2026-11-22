@@ -28,6 +28,7 @@ const (
 	ScreenPaused
 	ScreenControls
 	ScreenAccessibility
+	ScreenCheat
 )
 
 var (
@@ -69,6 +70,13 @@ type App struct {
 	// Control rebinding state
 	waitingRebind bool
 	rebindTarget  config.Action
+
+	// Cheat menu state (triggered by typing "iddqd")
+	cheatDetector      cheatCodeDetector
+	cheatReturnScreen  Screen
+	cheatReturnMenuIdx int
+	cheatLevel         int
+	cheatLevelTyping   bool
 }
 
 // NewApp constructs the Ebitengine game application.
@@ -77,15 +85,17 @@ func NewApp(pack *assets.Pack, sfx *audio.Bank, cfg config.Config, cfgPath strin
 	sfx.Muted = cfg.Muted
 	monoShader, _ := newMonochromeShader()
 	app := &App{
-		pack:       pack,
-		sfx:        sfx,
-		font:       NewFontRenderer(),
-		cfg:        cfg,
-		cfgPath:    cfgPath,
-		world:      sim.NewWorld(time.Now().UnixNano(), cfg.HighScore, cfg.Accessibility),
-		playCanvas: ebiten.NewImage(cw, ch),
-		monoShader: monoShader,
-		screen:     ScreenTitle,
+		pack:          pack,
+		sfx:           sfx,
+		font:          NewFontRenderer(),
+		cfg:           cfg,
+		cfgPath:       cfgPath,
+		world:         sim.NewWorld(time.Now().UnixNano(), cfg.HighScore, cfg.Accessibility),
+		playCanvas:    ebiten.NewImage(cw, ch),
+		monoShader:    monoShader,
+		screen:        ScreenTitle,
+		cheatDetector: newCheatCodeDetector(cheatCodeSequence),
+		cheatLevel:    1,
 	}
 	// Drain initial SfxLevelStart from pre-constructed world so title screen starts cleanly.
 	app.world.DrainSfx()
@@ -128,6 +138,15 @@ func (a *App) Update() error {
 	const dt = 1.0 / 60.0
 	a.elapsedSec += dt
 
+	if a.screen != ScreenCheat && !(a.screen == ScreenControls && a.waitingRebind) {
+		if chars := ebiten.AppendInputChars(nil); len(chars) > 0 {
+			if a.cheatDetector.Feed(chars) {
+				a.openCheatMenu()
+				return nil
+			}
+		}
+	}
+
 	switch a.screen {
 	case ScreenTitle:
 		return a.updateTitle(dt)
@@ -139,6 +158,8 @@ func (a *App) Update() error {
 		return a.updateControls()
 	case ScreenAccessibility:
 		return a.updateAccessibility()
+	case ScreenCheat:
+		return a.updateCheat()
 	}
 	return nil
 }
@@ -562,6 +583,20 @@ func (a *App) drawScene(screen *ebiten.Image) {
 			a.drawTitleBackdropOnly(screen)
 		}
 		a.drawAccessibilityOverlay(screen)
+	case ScreenCheat:
+		switch a.cheatReturnScreen {
+		case ScreenPlaying, ScreenPaused:
+			a.drawPlayingScreen(screen)
+		case ScreenControls, ScreenAccessibility:
+			if a.returnScreen == ScreenPaused {
+				a.drawPlayingScreen(screen)
+			} else {
+				a.drawTitleBackdropOnly(screen)
+			}
+		default:
+			a.drawTitleBackdropOnly(screen)
+		}
+		a.drawCheatOverlay(screen)
 	}
 }
 
@@ -877,6 +912,9 @@ func (a *App) renderWorldToCanvas() {
 	p.DrawLogical(dst, p.HUDBanner, 0, 184, assets.BaseWidth, 8)
 
 	reserveLives := w.Lives - 1
+	if w.InfiniteLives {
+		reserveLives = 4
+	}
 	if w.Phase == sim.PhaseGameOver {
 		reserveLives = 0
 	}

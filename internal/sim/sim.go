@@ -186,6 +186,7 @@ const (
 type World struct {
 	Level            int
 	Lives            int
+	InfiniteLives    bool
 	Score            int
 	HighScore        int
 	ExtraLifeAwarded bool
@@ -265,6 +266,23 @@ func (w *World) clearLevelKillMemory() {
 
 // RestartCurrentLevel resets the current level completely (including kill memory).
 func (w *World) RestartCurrentLevel() {
+	w.clearLevelKillMemory()
+	w.setupLevel(false)
+}
+
+// JumpToLevel switches immediately to the specified level (clamped to 1..MaxLevel)
+// and initializes it cleanly from the start.
+func (w *World) JumpToLevel(level int) {
+	if level < 1 {
+		level = 1
+	}
+	if level > levels.MaxLevel {
+		level = levels.MaxLevel
+	}
+	if w.Lives <= 0 {
+		w.Lives = InitialLives
+	}
+	w.Level = level
 	w.clearLevelKillMemory()
 	w.setupLevel(false)
 }
@@ -377,12 +395,19 @@ func (w *World) Update(dt float64, in InputSnapshot) {
 			w.Monsters[w.CatchingMonsterSlot].AnimFrame = int(w.CatchAnimElapsed*10.0) & 1
 		}
 		if w.PhaseTimer <= 0 {
-			w.Lives--
-			if w.Lives <= 0 {
-				w.Lives = 0
-				w.Phase = PhaseGameOver
-			} else {
+			if w.InfiniteLives {
+				if w.Lives < 1 {
+					w.Lives = 1
+				}
 				w.setupLevel(true)
+			} else {
+				w.Lives--
+				if w.Lives <= 0 {
+					w.Lives = 0
+					w.Phase = PhaseGameOver
+				} else {
+					w.setupLevel(true)
+				}
 			}
 		}
 		return
