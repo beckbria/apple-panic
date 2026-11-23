@@ -47,27 +47,48 @@ func TestDefaultsRebindingAndPersistence(t *testing.T) {
 		t.Fatalf("expected conflict swap Up=K, got %v", k)
 	}
 
+	cfg.Accessibility.ToggleControls = false
 	cfg.Accessibility.KeepKilledMonstersDead = true
 	cfg.Accessibility.PauseWhileMonsterFalls = false
+	cfg.Accessibility.AutoAlignDigging = false
+	cfg.Accessibility.ShowAlignmentGuides = true
+	cfg.Accessibility.GameSpeedPercent = 125
 	cfg.Accessibility.VideoMode = VideoModeMonochrome
+	cfg.Muted = true
 	cfg.HighScore = 12400
 
-	tmp := filepath.Join(t.TempDir(), "cfg.json")
+	tmp := filepath.Join(t.TempDir(), "nested", "cfg.json")
 	if err := cfg.Save(tmp); err != nil {
 		t.Fatalf("Save failed: %v", err)
 	}
 	loaded := Load(tmp)
-	if !loaded.Accessibility.KeepKilledMonstersDead || loaded.HighScore != 12400 {
+	if loaded.Accessibility != cfg.Accessibility {
+		t.Fatalf("loaded accessibility mismatch:\n got: %+v\nwant: %+v", loaded.Accessibility, cfg.Accessibility)
+	}
+	if !loaded.Muted || loaded.HighScore != 12400 {
 		t.Fatalf("loaded config mismatch: %+v", loaded)
-	}
-	if loaded.Accessibility.PauseWhileMonsterFalls {
-		t.Fatalf("expected loaded PauseWhileMonsterFalls=false, got true")
-	}
-	if loaded.Accessibility.VideoMode != VideoModeMonochrome {
-		t.Fatalf("expected loaded VideoMode=%q, got %q", VideoModeMonochrome, loaded.Accessibility.VideoMode)
 	}
 	if k, _ := loaded.KeyFor(ActionDig); k != ebiten.KeyW {
 		t.Fatalf("loaded binding mismatch: %v", k)
+	}
+
+	// Verify subsequent saves overwrite cleanly without leaving temp files behind.
+	loaded.Accessibility.ShowAlignmentGuides = false
+	loaded.Accessibility.VideoMode = VideoModeColor
+	loaded.Accessibility.GameSpeedPercent = 75
+	if err := loaded.Save(tmp); err != nil {
+		t.Fatalf("second Save failed: %v", err)
+	}
+	reloaded := Load(tmp)
+	if reloaded.Accessibility != loaded.Accessibility {
+		t.Fatalf("reloaded accessibility mismatch:\n got: %+v\nwant: %+v", reloaded.Accessibility, loaded.Accessibility)
+	}
+	entries, err := os.ReadDir(filepath.Dir(tmp))
+	if err != nil {
+		t.Fatalf("ReadDir failed: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "cfg.json" {
+		t.Fatalf("expected only cfg.json in config dir, got %d entries", len(entries))
 	}
 }
 

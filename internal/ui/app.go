@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"image/color"
+	"os"
 	"slices"
 	"time"
 
@@ -121,7 +122,12 @@ func (a *App) saveConfig() {
 	if a.world != nil && a.world.HighScore > a.cfg.HighScore {
 		a.cfg.HighScore = a.world.HighScore
 	}
-	_ = a.cfg.Save(a.cfgPath)
+	if a.cfgPath == "" {
+		return
+	}
+	if err := a.cfg.Save(a.cfgPath); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to save config to %s: %v\n", a.cfgPath, err)
+	}
 }
 
 // Layout returns a crisp 1120x768 (4x 280x192) virtual UI resolution so menus and
@@ -496,53 +502,59 @@ func (a *App) updateAccessibility() error {
 		if a.menuLeftPressed() {
 			dir = -1
 		}
-		acc := &a.cfg.Accessibility
-		switch a.menuIndex {
-		case 0:
-			acc.ToggleControls = !acc.ToggleControls
-			a.sfx.Play(audio.SfxMenuSelect)
-		case 1:
-			acc.KeepKilledMonstersDead = !acc.KeepKilledMonstersDead
-			a.sfx.Play(audio.SfxMenuSelect)
-		case 2:
-			acc.PauseWhileMonsterFalls = !acc.PauseWhileMonsterFalls
-			a.sfx.Play(audio.SfxMenuSelect)
-		case 3:
-			acc.AutoAlignDigging = !acc.AutoAlignDigging
-			a.sfx.Play(audio.SfxMenuSelect)
-		case 4:
-			acc.ShowAlignmentGuides = !acc.ShowAlignmentGuides
-			a.sfx.Play(audio.SfxMenuSelect)
-		case 5:
-			idx := 1
-			for i, sp := range speedChoices {
-				if sp == acc.GameSpeedPercent {
-					idx = i
-					break
-				}
-			}
-			idx = (idx + dir + len(speedChoices)) % len(speedChoices)
-			acc.GameSpeedPercent = speedChoices[idx]
-			a.sfx.Play(audio.SfxMenuSelect)
-		case 6:
-			if acc.VideoMode == config.VideoModeMonochrome {
-				acc.VideoMode = config.VideoModeColor
-			} else {
-				acc.VideoMode = config.VideoModeMonochrome
-			}
-			a.sfx.Play(audio.SfxMenuSelect)
-		case 7:
-			if a.menuConfirmPressed() {
-				a.sfx.Play(audio.SfxMenuSelect)
-				a.menuIndex = 0
-				a.screen = a.returnScreen
-				return nil
-			}
-		}
-		a.world.Accessibility = *acc
-		a.saveConfig()
+		a.applyAccessibilityChoice(a.menuIndex, dir, a.menuConfirmPressed())
 	}
 	return nil
+}
+
+func (a *App) applyAccessibilityChoice(index, dir int, confirmed bool) {
+	acc := &a.cfg.Accessibility
+	switch index {
+	case 0:
+		acc.ToggleControls = !acc.ToggleControls
+		a.sfx.Play(audio.SfxMenuSelect)
+	case 1:
+		acc.KeepKilledMonstersDead = !acc.KeepKilledMonstersDead
+		a.sfx.Play(audio.SfxMenuSelect)
+	case 2:
+		acc.PauseWhileMonsterFalls = !acc.PauseWhileMonsterFalls
+		a.sfx.Play(audio.SfxMenuSelect)
+	case 3:
+		acc.AutoAlignDigging = !acc.AutoAlignDigging
+		a.sfx.Play(audio.SfxMenuSelect)
+	case 4:
+		acc.ShowAlignmentGuides = !acc.ShowAlignmentGuides
+		a.sfx.Play(audio.SfxMenuSelect)
+	case 5:
+		idx := 1
+		for i, sp := range speedChoices {
+			if sp == acc.GameSpeedPercent {
+				idx = i
+				break
+			}
+		}
+		idx = (idx + dir + len(speedChoices)) % len(speedChoices)
+		acc.GameSpeedPercent = speedChoices[idx]
+		a.sfx.Play(audio.SfxMenuSelect)
+	case 6:
+		if acc.VideoMode == config.VideoModeMonochrome {
+			acc.VideoMode = config.VideoModeColor
+		} else {
+			acc.VideoMode = config.VideoModeMonochrome
+		}
+		a.sfx.Play(audio.SfxMenuSelect)
+	case 7:
+		if confirmed {
+			a.sfx.Play(audio.SfxMenuSelect)
+			a.menuIndex = 0
+			a.screen = a.returnScreen
+		}
+		return
+	default:
+		return
+	}
+	a.world.Accessibility = *acc
+	a.saveConfig()
 }
 
 // Draw renders the active screen, applying the monochrome green CRT filter when enabled.

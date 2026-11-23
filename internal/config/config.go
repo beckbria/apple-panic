@@ -2,8 +2,6 @@ package config
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 
 	"github.com/hajimehoshi/ebiten/v2"
 )
@@ -198,19 +196,15 @@ func AllBindableKeys() []ebiten.Key {
 	return allKeys
 }
 
-// DefaultConfigPath returns the user's config file path.
+// DefaultConfigPath returns the user's config file path (or browser storage key on js/wasm).
 func DefaultConfigPath() string {
-	dir, err := os.UserConfigDir()
-	if err != nil || dir == "" {
-		return "apple_panic_config.json"
-	}
-	return filepath.Join(dir, "apple-panic", "config.json")
+	return defaultConfigPath()
 }
 
 // Load reads Config from path, falling back to DefaultConfig if missing or invalid.
 func Load(path string) Config {
 	cfg := DefaultConfig()
-	data, err := os.ReadFile(path)
+	data, err := readConfigData(path)
 	if err != nil {
 		return cfg
 	}
@@ -237,14 +231,11 @@ func Load(path string) Config {
 	return cfg
 }
 
-// Save writes Config to path atomically.
+// Save writes Config to path atomically (or browser localStorage on js/wasm).
 func (c *Config) Save(path string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	return writeConfigData(path, data)
 }
