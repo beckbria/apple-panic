@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"image/color"
+	"slices"
 	"time"
 
 	"apple-panic/internal/assets"
@@ -827,6 +828,58 @@ func (a *App) drawPlayingScreen(screen *ebiten.Image) {
 	}
 }
 
+type guideSegment struct {
+	X int
+	Y int
+	H int
+}
+
+const (
+	brickGirderHeight = 6
+	guideDashHeight   = 3
+	guideDashPeriod   = 6
+	guideSpanTopPad   = 2
+)
+
+// alignmentGuideSegments computes non-overlapping vertical dashed guide segments
+// beneath open/partially-dug holes. Multiple aligned holes at the same X share a
+// single guide starting from the topmost hole, and each inter-floor span uses
+// identical dash positions so segments never overlap or clip into girders.
+func alignmentGuideSegments(holes []sim.Hole) []guideSegment {
+	if len(holes) == 0 {
+		return nil
+	}
+	topFloorByX := make(map[int]int, len(holes))
+	xs := make([]int, 0, len(holes))
+	for _, h := range holes {
+		if h.Stage <= 0 || h.FloorIdx < 0 || h.FloorIdx >= len(sim.BrickFloorYs) {
+			continue
+		}
+		if prev, ok := topFloorByX[h.X]; !ok {
+			topFloorByX[h.X] = h.FloorIdx
+			xs = append(xs, h.X)
+		} else if h.FloorIdx < prev {
+			topFloorByX[h.X] = h.FloorIdx
+		}
+	}
+	slices.Sort(xs)
+
+	var segs []guideSegment
+	for _, x := range xs {
+		for f := topFloorByX[x]; f < len(sim.BrickFloorYs); f++ {
+			spanTop := sim.BrickFloorYs[f] + brickGirderHeight
+			spanBot := sim.GroundFloorY
+			if f+1 < len(sim.BrickFloorYs) {
+				spanBot = sim.BrickFloorYs[f+1]
+			}
+			for y := spanTop + guideSpanTopPad; y+guideDashHeight <= spanBot; y += guideDashPeriod {
+				segs = append(segs, guideSegment{X: x, Y: y, H: guideDashHeight})
+			}
+		}
+	}
+	return segs
+}
+
 func (a *App) renderWorldToCanvas() {
 	dst := a.playCanvas
 	dst.Fill(color.Black)
@@ -840,12 +893,9 @@ func (a *App) renderWorldToCanvas() {
 	// 1. Optional vertical alignment plumb guides beneath holes
 	if w.Accessibility.ShowAlignmentGuides {
 		guideClr := color.RGBA{R: 0x0E, G: 0x9E, B: 0xC0, A: 0xFF}
-		for _, h := range w.Holes {
-			startY := sim.BrickFloorYs[h.FloorIdx] + 6
-			cx := float32(float64(2*h.X+7) * sf)
-			for y := startY; y < sim.GroundFloorY; y += 6 {
-				vector.FillRect(dst, cx-float32(0.75*sf), float32(float64(y)*sf), float32(1.5*sf), float32(3*sf), guideClr, false)
-			}
+		for _, seg := range alignmentGuideSegments(w.Holes) {
+			cx := float32(float64(2*seg.X+7) * sf)
+			vector.FillRect(dst, cx-float32(0.75*sf), float32(float64(seg.Y)*sf), float32(1.5*sf), float32(float64(seg.H)*sf), guideClr, false)
 		}
 	}
 
