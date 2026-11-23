@@ -756,7 +756,14 @@ func (w *World) onToggleDirPressed(d Dir) {
 	p.LatchedAct = LatchNone
 
 	if p.State == PlayerFalling {
-		p.QueuedDir = d
+		if d == DirLeft || d == DirRight {
+			p.LatchedDir = d
+			p.QueuedDir = DirNone
+			p.MovedInLatchedDir = true
+			p.FacingRight = (d == DirRight)
+		} else {
+			p.QueuedDir = d
+		}
 		return
 	}
 
@@ -972,12 +979,9 @@ func (w *World) stepPlayerToggle() {
 			p.FacingRight = (dx > 0)
 			if w.tryPlayerWalk(dx) {
 				if p.State == PlayerFalling {
-					p.LatchedDir = DirNone
 					p.QueuedDir = DirNone
-					p.MovedInLatchedDir = false
-				} else {
-					p.MovedInLatchedDir = true
 				}
+				p.MovedInLatchedDir = true
 				w.checkAllMonsterCollisionsWithPlayer()
 				return
 			}

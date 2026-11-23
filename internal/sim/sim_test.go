@@ -416,6 +416,104 @@ func TestToggleControls60HzSubTickAndDigLatch(t *testing.T) {
 	}
 }
 
+func TestToggleControlsResumeDirectionAfterHoleFall(t *testing.T) {
+	acc := config.DefaultConfig().Accessibility
+	acc.ToggleControls = true
+
+	// 1. Walking right into an open hole resumes moving right upon landing.
+	{
+		w := newActiveWorld(acc)
+		w.Holes = []Hole{{FloorIdx: 4, X: 40, Stage: 5}}
+		w.Player.X = 38
+		w.Player.Y = 0x80 // Floor 1 (brick girder at Y=0x90, floorIdx=4)
+
+		w.StepPlayer(InputSnapshot{PressRight: true}) // X=39
+		w.StepPlayer(InputSnapshot{})                 // X=40 -> PlayerFalling
+		if w.Player.State != PlayerFalling || w.Player.LatchedDir != DirRight {
+			t.Fatalf("expected PlayerFalling with LatchedDir=DirRight, got state=%v dir=%v", w.Player.State, w.Player.LatchedDir)
+		}
+
+		// Step through the 32px fall (16 ticks) until landing on ground floor (Y=0xA0)
+		for i := 0; i < 16; i++ {
+			w.StepPlayer(InputSnapshot{})
+		}
+		if w.Player.Y != 0xA0 || w.Player.State != PlayerIdle {
+			t.Fatalf("expected player landed at Y=0xA0 PlayerIdle, got Y=%d state=%v", w.Player.Y, w.Player.State)
+		}
+
+		// Next ticks should automatically resume moving right!
+		w.StepPlayer(InputSnapshot{})
+		w.StepPlayer(InputSnapshot{})
+		if w.Player.X != 42 || w.Player.LatchedDir != DirRight || w.Player.State != PlayerRunning {
+			t.Fatalf("expected player to resume moving right after landing (X=42), got X=%d dir=%v state=%v",
+				w.Player.X, w.Player.LatchedDir, w.Player.State)
+		}
+	}
+
+	// 2. Walking left into two aligned holes resumes moving left upon landing.
+	{
+		w := newActiveWorld(acc)
+		w.Holes = []Hole{
+			{FloorIdx: 3, X: 50, Stage: 5},
+			{FloorIdx: 4, X: 50, Stage: 5},
+		}
+		w.Player.X = 52
+		w.Player.Y = 0x60 // Floor 2 (floorIdx=3)
+
+		w.StepPlayer(InputSnapshot{PressLeft: true}) // X=51
+		w.StepPlayer(InputSnapshot{})                // X=50 -> PlayerFalling
+		if w.Player.State != PlayerFalling || w.Player.LatchedDir != DirLeft {
+			t.Fatalf("expected PlayerFalling with LatchedDir=DirLeft, got state=%v dir=%v", w.Player.State, w.Player.LatchedDir)
+		}
+
+		// Step through both floors (32 ticks) until landing on Y=0xA0, then 2 more ticks to walk left.
+		for i := 0; i < 34; i++ {
+			w.StepPlayer(InputSnapshot{})
+		}
+		if w.Player.Y != 0xA0 || w.Player.X != 48 || w.Player.LatchedDir != DirLeft || w.Player.State != PlayerRunning {
+			t.Fatalf("expected player to fall through 2 holes and move left to (48, 0xA0), got (%d, %d) dir=%v state=%v",
+				w.Player.X, w.Player.Y, w.Player.LatchedDir, w.Player.State)
+		}
+	}
+
+	// 3. Pressing opposite direction mid-fall overrides landing direction.
+	{
+		w := newActiveWorld(acc)
+		w.Holes = []Hole{{FloorIdx: 4, X: 40, Stage: 5}}
+		w.Player.X = 39
+		w.Player.Y = 0x80
+
+		w.StepPlayer(InputSnapshot{PressRight: true}) // X=40 -> PlayerFalling
+		w.StepPlayer(InputSnapshot{})                 // Y=0x82
+		w.StepPlayer(InputSnapshot{PressLeft: true})  // Override direction mid-fall
+		for i := 0; i < 16; i++ {
+			w.StepPlayer(InputSnapshot{})
+		}
+		if w.Player.Y != 0xA0 || w.Player.X >= 40 || w.Player.LatchedDir != DirLeft {
+			t.Fatalf("expected mid-fall Left press to move left upon landing, got (%d, %d) dir=%v",
+				w.Player.X, w.Player.Y, w.Player.LatchedDir)
+		}
+	}
+
+	// 4. Pressing Stop mid-fall stops the player upon landing.
+	{
+		w := newActiveWorld(acc)
+		w.Holes = []Hole{{FloorIdx: 4, X: 40, Stage: 5}}
+		w.Player.X = 39
+		w.Player.Y = 0x80
+
+		w.StepPlayer(InputSnapshot{PressRight: true}) // X=40 -> PlayerFalling
+		w.StepPlayer(InputSnapshot{PressStop: true})  // Cancel latched direction mid-fall
+		for i := 0; i < 20; i++ {
+			w.StepPlayer(InputSnapshot{})
+		}
+		if w.Player.Y != 0xA0 || w.Player.X != 40 || w.Player.LatchedDir != DirNone || w.Player.State != PlayerIdle {
+			t.Fatalf("expected mid-fall Stop to keep player idle at (40, 0xA0), got (%d, %d) dir=%v state=%v",
+				w.Player.X, w.Player.Y, w.Player.LatchedDir, w.Player.State)
+		}
+	}
+}
+
 func TestMonsterCatchJumpAnimation(t *testing.T) {
 	acc := config.DefaultConfig().Accessibility
 	w := newActiveWorld(acc)
